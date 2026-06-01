@@ -3,11 +3,7 @@ import time
 from typing import Optional, Dict, Union
 
 class RedisSimulator:
-    """
-    A thread-safe, asynchronous simulator for Redis to be used in the 
-    Senior Backend Challenge. This helps simulate network latency and 
-    distributed state management.
-    """
+  
     def __init__(self, latency_ms: int = 50):
         self.latency_sec = latency_ms / 1000.0
         self._data: Dict[str, str] = {}
@@ -17,7 +13,7 @@ class RedisSimulator:
     async def _simulate_latency(self):
         await asyncio.sleep(self.latency_sec)
 
-    async def get(self, key: str) -> Optional[str]:
+    async def get(self, key: str):
         async with self._lock:
             await self._simulate_latency()
             # Check for expiration
@@ -34,8 +30,8 @@ class RedisSimulator:
             if ex:
                 self._ttls[key] = time.time() + ex
 
-    async def incr(self, key: str) -> int:
-        """Atomic increment operation."""
+    async def incr(self, key: str):
+        
         async with self._lock:
             await self._simulate_latency()
             val = int(self._data.get(key, 0))
@@ -56,7 +52,7 @@ class RedisSimulator:
             self._ttls.pop(key, None)
 
     async def pipeline(self):
-        """Simple pipeline implementation for atomic batching."""
+        
         return RedisPipeline(self)
 
 class RedisPipeline:

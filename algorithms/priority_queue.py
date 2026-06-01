@@ -4,16 +4,17 @@ from dataclasses import dataclass
 from threading import Lock
 from typing import Any, Callable, List, Optional
 
-
-CRITICAL_PRIORITY = 0
-HIGH_PRIORITY = 1
-NORMAL_PRIORITY = 2
-
-DEFAULT_AGING_THRESHOLD_SECONDS = 5
+from config.constants import (
+    CRITICAL_PRIORITY,
+    HIGH_PRIORITY,
+    NORMAL_PRIORITY,
+    DEFAULT_AGING_THRESHOLD_SECONDS
+)
 
 
 @dataclass(slots=True)
 class QueueItem:
+    
 
     request_id: str
 
@@ -25,7 +26,7 @@ class QueueItem:
 
     insertion_order: int
 
-    has_received_age_boost: bool = False
+    age_boost_applied: bool = False
 
 
 class PriorityScheduler:
@@ -35,13 +36,16 @@ class PriorityScheduler:
         aging_threshold_seconds: int = (
             DEFAULT_AGING_THRESHOLD_SECONDS
         ),
-        clock: Callable[[], float] = time.time
-    ) -> None:
+        clock: Callable[
+            [],
+            float
+        ] = time.time
+    ):
 
         if aging_threshold_seconds <= 0:
 
             raise ValueError(
-                "aging_threshold_seconds must be positive"
+                "aging threshold must be positive"
             )
 
         self.clock = clock
@@ -56,14 +60,14 @@ class PriorityScheduler:
 
         self.sequence_counter = 0
 
-        self.lock = Lock()
+        self._lock = Lock()
 
     def insert(
         self,
         request_id: str,
         payload: Any,
         priority: int
-    ) -> None:
+    ):
 
         normalized_request_id = (
             request_id.strip()
@@ -78,15 +82,17 @@ class PriorityScheduler:
         if priority not in {
 
             CRITICAL_PRIORITY,
+
             HIGH_PRIORITY,
+
             NORMAL_PRIORITY
         }:
 
             raise ValueError(
-                "invalid priority value"
+                "invalid priority"
             )
 
-        with self.lock:
+        with self._lock:
 
             queue_item = QueueItem(
 
@@ -119,9 +125,9 @@ class PriorityScheduler:
 
     def extract_next(
         self
-    ) -> Optional[QueueItem]:
+    ):
 
-        with self.lock:
+        with self._lock:
 
             if not self.heap:
 
@@ -129,7 +135,7 @@ class PriorityScheduler:
 
             self._apply_priority_aging()
 
-            highest_priority_item = (
+            selected_item = (
                 self.heap[0]
             )
 
@@ -139,19 +145,25 @@ class PriorityScheduler:
 
             if self.heap:
 
-                self.heap[0] = last_item
+                self.heap[0] = (
+                    last_item
+                )
 
-                self._heapify_down(0)
+                self._heapify_down(
+                    0
+                )
 
-            return highest_priority_item
+            return selected_item
 
     def _apply_priority_aging(
         self
-    ) -> None:
+    ):
 
-        current_time = self.clock()
+        current_time = (
+            self.clock()
+        )
 
-        heap_updated = False
+        heap_changed = False
 
         for item in self.heap:
 
@@ -165,15 +177,17 @@ class PriorityScheduler:
             should_promote = (
 
                 waiting_time >=
+
                 self.aging_threshold_seconds
 
                 and
 
-                not item.has_received_age_boost
+                not item.age_boost_applied
 
                 and
 
                 item.priority >
+
                 CRITICAL_PRIORITY
             )
 
@@ -181,11 +195,11 @@ class PriorityScheduler:
 
                 item.priority -= 1
 
-                item.has_received_age_boost = True
+                item.age_boost_applied = True
 
-                heap_updated = True
+                heap_changed = True
 
-        if heap_updated:
+        if heap_changed:
 
             for index in reversed(
 
@@ -198,29 +212,32 @@ class PriorityScheduler:
                     index
                 )
 
-    def _is_higher_priority(
+    def _has_higher_priority(
         self,
         left: QueueItem,
         right: QueueItem
-    ) -> bool:
+    ):
 
         if left.priority != right.priority:
 
             return (
+
                 left.priority <
+
                 right.priority
             )
 
         return (
 
             left.insertion_order <
+
             right.insertion_order
         )
 
     def _heapify_up(
         self,
         index: int
-    ) -> None:
+    ):
 
         while index > 0:
 
@@ -228,7 +245,7 @@ class PriorityScheduler:
                 index - 1
             ) // 2
 
-            if not self._is_higher_priority(
+            if not self._has_higher_priority(
 
                 self.heap[index],
 
@@ -249,7 +266,7 @@ class PriorityScheduler:
     def _heapify_down(
         self,
         index: int
-    ) -> None:
+    ):
 
         heap_size = len(
             self.heap
@@ -273,7 +290,7 @@ class PriorityScheduler:
 
                 and
 
-                self._is_higher_priority(
+                self._has_higher_priority(
 
                     self.heap[left_child],
 
@@ -289,7 +306,7 @@ class PriorityScheduler:
 
                 and
 
-                self._is_higher_priority(
+                self._has_higher_priority(
 
                     self.heap[right_child],
 
@@ -311,4 +328,3 @@ class PriorityScheduler:
             )
 
             index = smallest
-        

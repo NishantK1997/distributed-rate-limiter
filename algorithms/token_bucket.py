@@ -1,25 +1,26 @@
 import time
+
 from typing import Any, Dict
+
+from config.constants import (
+    DEFAULT_TOKEN_COST
+)
 
 
 class TokenBucket:
-
-    DEFAULT_TOKEN_COST = 1
 
     def __init__(
         self,
         refill_rate_per_second: int,
         max_bucket_capacity: int
-    ) -> None:
+    ):
 
         if refill_rate_per_second <= 0:
-
             raise ValueError(
                 "refill_rate_per_second must be positive"
             )
 
         if max_bucket_capacity <= 0:
-
             raise ValueError(
                 "max_bucket_capacity must be positive"
             )
@@ -40,9 +41,13 @@ class TokenBucket:
             time.time()
         )
 
-    def _refill_bucket(self) -> None:
+    def _refill_bucket(
+        self
+    ):
 
-        current_timestamp = time.time()
+        current_timestamp = (
+            time.time()
+        )
 
         elapsed_seconds = max(
 
@@ -75,11 +80,12 @@ class TokenBucket:
 
     def consume_tokens(
         self,
-        token_count: int = DEFAULT_TOKEN_COST
-    ) -> bool:
+        token_count: int = (
+            DEFAULT_TOKEN_COST
+        )
+    ):
 
         if token_count <= 0:
-
             raise ValueError(
                 "token_count must be positive"
             )
@@ -98,7 +104,7 @@ class TokenBucket:
 
     def get_bucket_state(
         self
-    ) -> Dict[str, Any]:
+    ):
 
         return {
 

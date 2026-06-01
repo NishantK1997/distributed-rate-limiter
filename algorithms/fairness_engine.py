@@ -7,7 +7,9 @@ from algorithms.token_bucket import (
 
 class TenantFairnessEngine:
 
-    def __init__(self) -> None:
+    def __init__(
+        self
+    ):
 
         self.tenant_buckets: Dict[
             str,
@@ -19,7 +21,7 @@ class TenantFairnessEngine:
         tenant_id: str,
         requests_per_second: int,
         burst_capacity: int
-    ) -> None:
+    ):
 
         normalized_tenant_id = (
             tenant_id.strip()
@@ -31,9 +33,13 @@ class TenantFairnessEngine:
                 "tenant_id cannot be empty"
             )
 
-        self.tenant_buckets[
-            normalized_tenant_id
-        ] = TokenBucket(
+        if normalized_tenant_id in self.tenant_buckets:
+
+            raise ValueError(
+                "tenant already registered"
+            )
+
+        tenant_bucket = TokenBucket(
 
             refill_rate_per_second=(
                 requests_per_second
@@ -44,10 +50,14 @@ class TenantFairnessEngine:
             )
         )
 
+        self.tenant_buckets[
+            normalized_tenant_id
+        ] = tenant_bucket
+
     def is_request_allowed(
         self,
         tenant_id: str
-    ) -> bool:
+    ):
 
         tenant_bucket = (
 
@@ -68,9 +78,7 @@ class TenantFairnessEngine:
     def get_tenant_state(
         self,
         tenant_id: str
-    ) -> Optional[
-        Dict[str, Any]
-    ]:
+    ):
 
         tenant_bucket = (
 
@@ -86,4 +94,12 @@ class TenantFairnessEngine:
         return (
             tenant_bucket
             .get_bucket_state()
+        )
+
+    def registered_tenants_count(
+        self
+    ):
+
+        return len(
+            self.tenant_buckets
         )

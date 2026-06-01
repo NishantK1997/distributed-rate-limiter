@@ -1,9 +1,8 @@
+gitignore
 venv/
 __pycache__/
-**/__pycache__/
 .pytest_cache/
 *.pyc
-*.pyo
-*.swp
+.env
 .vscode/
 .idea/

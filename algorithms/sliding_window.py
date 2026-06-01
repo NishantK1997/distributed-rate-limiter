@@ -1,80 +1,99 @@
+import asyncio
 import math
 import time
-from typing import Dict, Optional, Tuple
 
-from storage.redis_simulator import RedisSimulator
+from typing import Any, Dict, Tuple
+
+from config.constants import (
+    WINDOW_TTL_MULTIPLIER
+)
+
+from storage.redis_simulator import (
+    RedisSimulator
+)
 
 
 class SlidingWindowCounter:
-    WINDOW_TTL_MULTIPLIER = 2
 
     def __init__(
         self,
         redis_client: RedisSimulator,
         request_limit: int,
         window_size_seconds: int
-    ) -> None:
+    ):
+
+        if request_limit <= 0:
+
+            raise ValueError(
+                "request_limit must be positive"
+            )
+
+        if window_size_seconds <= 0:
+
+            raise ValueError(
+                "window_size_seconds must be positive"
+            )
 
         self.redis = redis_client
-        self.request_limit = request_limit
-        self.window_size_seconds = window_size_seconds
+
+        self.request_limit = (
+            request_limit
+        )
+
+        self.window_size_seconds = (
+            window_size_seconds
+        )
+
+        self._request_lock = (
+            asyncio.Lock()
+        )
 
     def _build_window_keys(
         self,
         client_id: str,
-        timestamp: float
-    ) -> Tuple[str, str]:
+        current_time: float
+    ):
 
-        current_window_id = math.floor(
-            timestamp / self.window_size_seconds
+        current_window = math.floor(
+
+            current_time /
+
+            self.window_size_seconds
         )
 
-        previous_window_id = current_window_id - 1
-
-        current_window_key = (
-            f"{client_id}:{current_window_id}"
-        )
-
-        previous_window_key = (
-            f"{client_id}:{previous_window_id}"
+        previous_window = (
+            current_window - 1
         )
 
         return (
-            current_window_key,
-            previous_window_key
+
+            f"{client_id}:{current_window}",
+
+            f"{client_id}:{previous_window}"
         )
-
-    async def _get_counter_value(
-        self,
-        redis_key: str
-    ) -> int:
-
-        stored_value = await self.redis.get(
-            redis_key
-        )
-
-        return int(stored_value or 0)
 
     def _calculate_weighted_count(
         self,
-        previous_window_count: int,
-        current_window_count: int,
-        timestamp: float
-    ) -> int:
+        previous_count: int,
+        current_count: int,
+        current_time: float
+    ):
 
-        current_window_progress = (
+        progress_ratio = (
 
-            timestamp %
+            current_time %
+
             self.window_size_seconds
 
         ) / self.window_size_seconds
 
         weighted_count = (
 
-            previous_window_count *
-            (1 - current_window_progress)
+            previous_count *
 
-        ) + current_window_count
+            (1 - progress_ratio)
+
+        ) + current_count
 
         return math.ceil(
             weighted_count
@@ -83,100 +102,118 @@ class SlidingWindowCounter:
     async def is_allowed(
         self,
         client_id: str,
-        current_time: Optional[float] = None
-    ) -> Dict:
+        current_time: float | None = None
+    ):
 
-        request_timestamp = (
-            current_time
-            if current_time is not None
-            else time.time()
-        )
+        async with self._request_lock:
 
-        (
-            current_window_key,
-            previous_window_key
-        ) = self._build_window_keys(
+            request_time = (
 
-            client_id,
+                current_time
 
-            request_timestamp
-        )
+                if current_time is not None
 
-        previous_window_count = await self._get_counter_value(
-            previous_window_key
-        )
-
-        current_window_count = await self._get_counter_value(
-            current_window_key
-        )
-
-        effective_request_count = (
-
-            self._calculate_weighted_count(
-
-                previous_window_count,
-
-                current_window_count,
-
-                request_timestamp
+                else time.time()
             )
-        )
 
-        if effective_request_count >= self.request_limit:
+            (
+                current_key,
 
-            retry_after_seconds = (
+                previous_key
 
-                self.window_size_seconds -
+            ) = self._build_window_keys(
 
-                (
-                    request_timestamp %
-                    self.window_size_seconds
+                client_id,
+
+                request_time
+            )
+
+            previous_count = int(
+
+                await self.redis.get(
+                    previous_key
                 )
+
+                or 0
+            )
+
+            current_count = int(
+
+                await self.redis.get(
+                    current_key
+                )
+
+                or 0
+            )
+
+            effective_count = (
+
+                self._calculate_weighted_count(
+
+                    previous_count,
+
+                    current_count,
+
+                    request_time
+                )
+            )
+
+            if effective_count >= self.request_limit:
+
+                retry_after = round(
+
+                    self.window_size_seconds -
+
+                    (
+                        request_time %
+
+                        self.window_size_seconds
+                    ),
+
+                    2
+                )
+
+                return {
+
+                    "allowed": False,
+
+                    "retry_after": retry_after,
+
+                    "remaining": 0
+                }
+
+            request_count = await self.redis.incr(
+                current_key
+            )
+
+            await self.redis.expire(
+
+                current_key,
+
+                self.window_size_seconds *
+
+                WINDOW_TTL_MULTIPLIER
+            )
+
+            remaining_requests = max(
+
+                0,
+
+                self.request_limit -
+
+                effective_count -
+
+                1
             )
 
             return {
 
-                "allowed": False,
+                "allowed": True,
 
-                "retry_after": round(
-                    retry_after_seconds,
-                    2
-                ),
+                "retry_after": 0,
 
-                "remaining": 0
+                "remaining": remaining_requests,
+
+                "count": request_count
             }
 
-        updated_counter = await self.redis.incr(
-            current_window_key
-        )
-
-        await self.redis.expire(
-
-            current_window_key,
-
-            self.window_size_seconds *
-            self.WINDOW_TTL_MULTIPLIER
-        )
-
-        remaining_requests = max(
-
-            0,
-
-            self.request_limit -
-
-            effective_request_count -
-
-            1
-        )
-
-        return {
-
-            "allowed": True,
-
-            "retry_after": 0,
-
-            "remaining": remaining_requests,
-
-            "count": updated_counter
-        }
-    

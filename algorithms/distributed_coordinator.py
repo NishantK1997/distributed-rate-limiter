@@ -17,7 +17,7 @@ class DistributedRateLimiter:
         redis_client: RedisSimulator,
         request_limit: int,
         window_size_seconds: int
-    ) -> None:
+    ):
 
         if request_limit <= 0:
 
@@ -46,12 +46,14 @@ class DistributedRateLimiter:
             SlidingWindowCounter
         ] = {}
 
-        self._lock = Lock()
+        self._registration_lock = (
+            Lock()
+        )
 
     def register_node(
         self,
         node_id: str
-    ) -> None:
+    ):
 
         normalized_node_id = (
             node_id.strip()
@@ -63,9 +65,16 @@ class DistributedRateLimiter:
                 "node_id cannot be empty"
             )
 
-        with self._lock:
+        with self._registration_lock:
 
-            if normalized_node_id in self.node_limiters:
+            if (
+
+                normalized_node_id
+
+                in
+
+                self.node_limiters
+            ):
 
                 raise ValueError(
                     "node already registered"
@@ -92,9 +101,10 @@ class DistributedRateLimiter:
         self,
         node_id: str,
         client_id: str
-    ) -> Dict[str, Any]:
+    ):
 
         limiter = (
+
             self.node_limiters.get(
                 node_id
             )
@@ -112,8 +122,22 @@ class DistributedRateLimiter:
 
     def registered_nodes_count(
         self
-    ) -> int:
+    ):
 
         return len(
+            self.node_limiters
+        )
+
+    def node_exists(
+        self,
+        node_id: str
+    ):
+
+        return (
+
+            node_id
+
+            in
+
             self.node_limiters
         )
